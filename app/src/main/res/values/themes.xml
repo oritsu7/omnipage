@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark window background avoids a white flash before Compose draws. -->
+    <style name="Theme.OmniPage" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/omni_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+    <color name="omni_bg">#0F1115</color>
+</resources>

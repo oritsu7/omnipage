@@ -1,0 +1,93 @@
+
+:root {
+  /* Background and text */
+  --o-bg: #0E1F2F;
+  --o-fg: #E2CAD8;
+
+  /* Links and interactive elements */
+  --o-link: #87A7D0;
+
+  /* Typography */
+  --o-fs: 19px;
+  --o-lh: 1.6;
+  --o-ff: 'OmniLiterata', Georgia, serif;
+
+  /* Layout */
+  --o-mx: 22px;
+  --o-my: 16px;
+  --o-vw: 100vw;
+  --o-vh: 100vh;
+
+  /* Additional palette colors */
+  --o-primary: #0E1B48;
+  --o-surface: #27425D;
+  --o-accent: #C18DB4;
+}
+
+@font-face { font-family: 'OmniLiterata';    src: url('https://epub.local/__omni/fonts/literata.ttf');     font-weight: 100 900; }
+@font-face { font-family: 'OmniSourceSerif'; src: url('https://epub.local/__omni/fonts/source_serif.ttf'); font-weight: 100 900; }
+@font-face { font-family: 'OmniInter';       src: url('https://epub.local/__omni/fonts/inter.ttf');        font-weight: 100 900; }
+
+html {
+  background: var(--o-bg) !important;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: transparent !important;
+  color: var(--o-fg) !important;
+  font-family: var(--o-ff) !important;
+  font-size: var(--o-fs) !important;
+  line-height: var(--o-lh) !important;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
+
+/* Beat publisher colours / fonts so every theme stays readable. */
+body * { color: inherit !important; background-color: transparent !important; }
+body *:not(pre):not(code):not(kbd):not(samp):not(tt) { font-family: inherit !important; }
+body a, body a * { color: var(--o-link) !important; }
+body p, body li, body blockquote, body dd { line-height: var(--o-lh) !important; }
+html.o-justify body p { text-align: justify !important; }
+
+pre, code, kbd, samp, tt { font-family: ui-monospace, Menlo, Consolas, monospace !important; }
+pre { white-space: pre-wrap; }
+img, svg, video, table { max-width: 100% !important; }
+img, video { height: auto; }
+body h1, body h2, body h3 { line-height: 1.25 !important; }
+
+/* ---- continuous scroll ---- */
+html:not(.o-paged) body {
+  margin: 0 !important;
+  padding: var(--o-my) var(--o-mx) 72px !important;
+}
+
+/* ---- paged: CSS columns, one column per screen, scrolled horizontally by omni.step() ---- */
+html.o-paged { width: var(--o-vw, 100vw); height: var(--o-vh, 100vh); overflow: hidden !important; }
+html.o-paged body {
+  margin: var(--o-my) var(--o-mx) !important;
+  padding: 0 !important;
+  width: calc(var(--o-vw, 100vw) - 2 * var(--o-mx)) !important;
+  height: calc(var(--o-vh, 100vh) - 2 * var(--o-my)) !important;
+  column-width: calc(var(--o-vw, 100vw) - 2 * var(--o-mx));
+  column-gap: calc(2 * var(--o-mx));
+  column-fill: auto;
+}
+html.o-paged img, html.o-paged svg, html.o-paged video {
+  max-height: calc(var(--o-vh, 100vh) - 2 * var(--o-my)) !important;
+  width: auto;
+  object-fit: contain;
+  break-inside: avoid;
+}
+html.o-paged h1, html.o-paged h2, html.o-paged h3 { break-after: avoid; }
+html.o-paged p { orphans: 2; widows: 2; }
+
+/* ---- highlights (specificity beats the "transparent background" reset above) ---- */
+body span.o-hl {
+  background-color: rgba(255, 213, 0, 0.38) !important;
+  color: inherit !important;
+  border-radius: 2px;
+}
