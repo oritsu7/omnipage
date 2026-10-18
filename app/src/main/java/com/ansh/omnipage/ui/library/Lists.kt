@@ -81,6 +81,7 @@ fun emptyCopy(section: Section, searching: Boolean): Pair<String, String> =
             Section.HAVE_READ -> "No finished books" to "Tap the double check on a book to mark it read."
             Section.TRASH -> "Trash is empty" to "Books you move to Trash wait here until you restore them."
             Section.DOWNLOADS -> "No downloads found" to "Books inside a Download folder you've added show up here."
+            Section.COLLECTIONS -> "This collection is empty" to "Tap the collections button on a book to add it here."
             else -> "Your library is empty" to "Add a folder to scan, or pick individual files."
         }
     }

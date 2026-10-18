@@ -82,6 +82,9 @@ fun DetailScreen(bookId: Long, onBack: () -> Unit, onRead: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
+    val allCollections by vm.collections.collectAsStateWithLifecycle()
+    val memberIds by vm.memberIds.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = Night,
@@ -126,8 +129,8 @@ fun DetailScreen(bookId: Long, onBack: () -> Unit, onRead: () -> Unit) {
                     )
                     ActionIcon(Icons.Outlined.Schedule, "To read", b.isToRead, vm::toggleToRead)
                     ActionIcon(Icons.Outlined.DoneAll, "Have read", b.isFinished, vm::toggleFinished)
-                    ActionIcon(Icons.Outlined.CollectionsBookmark, "Collections", false) {
-                        scope.launch { snackbar.showSnackbar("Collections arrive in Phase 3") }
+                    ActionIcon(Icons.Outlined.CollectionsBookmark, "Collections", memberIds.isNotEmpty()) {
+                        picking = true
                     }
                     ActionIcon(Icons.Outlined.Share, "Share", false) { shareBook(context, b) }
                     if (b.trashed) {
@@ -141,6 +144,8 @@ fun DetailScreen(bookId: Long, onBack: () -> Unit, onRead: () -> Unit) {
 
                 if (b.author.isNotBlank()) InfoRow(b.author, "Author")
                 if (b.series.isNotBlank()) {
+                    val shelfNames = allCollections.filter { it.id in memberIds }.joinToString(", ") { it.name }
+                    if (shelfNames.isNotEmpty()) InfoRow(shelfNames, "Collections")
                     val index = if (b.seriesIndex > 0f) " #${trimFloat(b.seriesIndex)}" else ""
                     InfoRow(b.series + index, "Series")
                 }
@@ -150,6 +155,17 @@ fun DetailScreen(bookId: Long, onBack: () -> Unit, onRead: () -> Unit) {
                 InfoRow(if (b.relPath.isNotBlank()) b.relPath else b.fileName, "Location")
                 InfoRow(formatDate(b.addedAt), "Added")
                 if (b.lastOpenedAt > 0) InfoRow(formatDate(b.lastOpenedAt), "Last opened")
+            }
+
+            if (picking) {
+                com.ansh.omnipage.ui.library.CollectionPickerDialog(
+                    bookTitle = b.title,
+                    collections = allCollections,
+                    memberIds = memberIds,
+                    onToggle = { collection, member -> vm.setMembership(collection, member) },
+                    onCreate = vm::createCollectionAndAdd,
+                    onDismiss = { picking = false },
+                )
             }
 
             if (editing) EditDialog(b, onDismiss = { editing = false }) { t, a, s ->

@@ -13,7 +13,7 @@ interface BookDao {
 
     // reads
 
-    @RawQuery(observedEntities = [BookEntity::class])
+    @RawQuery(observedEntities = [BookEntity::class, BookCollectionRef::class])
     fun observeRaw(query: SupportSQLiteQuery): Flow<List<BookEntity>>
 
     @Query("SELECT * FROM books WHERE id = :id")

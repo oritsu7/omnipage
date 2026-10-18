@@ -143,6 +143,10 @@ fun LibraryScreen(
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
     val scan by vm.scanState.collectAsStateWithLifecycle()
+    val collections by vm.collections.collectAsStateWithLifecycle()
+    val allCollections by vm.allCollections.collectAsStateWithLifecycle()
+    val pickerBook by vm.pickerBook.collectAsStateWithLifecycle()
+    val pickerMembers by vm.pickerMembers.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -174,11 +178,23 @@ fun LibraryScreen(
         onFavorite = { vm.toggleFavorite(book) },
         onToRead = { vm.toggleToRead(book) },
         onFinished = { vm.toggleFinished(book) },
-        onCollections = { vm.notice("Collections arrive in Phase 3") },
+        onCollections = { vm.openCollectionPicker(book) },
         onShare = { shareBook(context, book) },
         onTrash = { vm.trash(book) },
         onRestore = { vm.restore(book) },
     )
+
+    val picking = pickerBook
+    if (picking != null) {
+        CollectionPickerDialog(
+            bookTitle = picking.title,
+            collections = allCollections,
+            memberIds = pickerMembers,
+            onToggle = { collection, member -> vm.setMembership(collection, member) },
+            onCreate = vm::createCollectionForPicker,
+            onDismiss = vm::closeCollectionPicker,
+        )
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -264,12 +280,14 @@ fun LibraryScreen(
                         onRemove = vm::removeFolder,
                         onAddFolder = pickFolder,
                     )
-                    section.isGrouped && currentGroup == null ->
-                        GroupList(section, groups, vm::openGroup)
-                    section == Section.COLLECTIONS -> EmptyState(
-                        "Collections are coming",
-                        "Grouping books into your own shelves lands with library management in Phase 3.",
+                    section == Section.COLLECTIONS && currentGroup == null -> CollectionList(
+                        collections = collections,
+                        onOpen = vm::openCollection,
+                        onCreate = vm::createCollection,
+                        onRename = vm::renameCollection,
+                        onDelete = vm::deleteCollection,
                     )
+                    section.isGrouped && currentGroup == null -> GroupList(section, groups, vm::openGroup)
                     list == null -> Unit
                     list.isEmpty() -> {
                         val (title, body) = emptyCopy(section, searching = search.isNotBlank())

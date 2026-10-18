@@ -10,6 +10,9 @@ import com.ansh.omnipage.data.db.FolderEntity
 import com.ansh.omnipage.data.db.FolderWithCount
 import com.ansh.omnipage.data.db.GroupCount
 import com.ansh.omnipage.data.db.OmniDatabase
+import com.ansh.omnipage.data.db.BookCollectionRef
+import com.ansh.omnipage.data.db.CollectionEntity
+import com.ansh.omnipage.data.db.CollectionWithCount
 import com.ansh.omnipage.scan.FoundDoc
 import com.ansh.omnipage.scan.FolderScanner
 import com.ansh.omnipage.scan.Fingerprint
@@ -36,6 +39,7 @@ class LibraryRepository(
 ) {
     private val books = db.bookDao()
     private val folders = db.folderDao()
+    private val collections = db.collectionDao()
 
     // One scan at a time: avoids two workers inserting the same file. 
     private val scanMutex = Mutex()
@@ -88,6 +92,7 @@ class LibraryRepository(
         val folder = folders.byId(id) ?: return
         val owned = books.getByFolder(id)
         books.deleteByFolder(id)
+        collections.purgeOrphans()
         folders.delete(id)
         owned.forEach { deleteCoverIfOrphan(it.coverPath) }
         runCatching {
@@ -257,6 +262,43 @@ class LibraryRepository(
         books.editMeta(id, title.trim().ifEmpty { "Untitled" }, author.trim(), series.trim())
     suspend fun markOpened(id: Long) = books.markOpened(id, System.currentTimeMillis())
     suspend fun setProgress(id: Long, progress: Float) = books.setProgress(id, progress.coerceIn(0f, 1f))
+
+    // collections
+
+    fun observeCollections(): Flow<List<CollectionWithCount>> = collections.observeWithCount()
+
+    fun observeAllCollections(): Flow<List<CollectionEntity>> = collections.observeAll()
+
+    fun observeCollectionIds(bookId: Long): Flow<List<Long>> = collections.observeIdsForBook(bookId)
+
+    // Returns the new id, the id of an existing collection with that name, or -1 for a blank name. 
+    suspend fun createCollection(name: String): Long {
+        val clean = name.trim()
+        if (clean.isEmpty()) return -1L
+        collections.byName(clean)?.let { return it.id }
+        val id = collections.insert(CollectionEntity(name = clean, createdAt = System.currentTimeMillis()))
+        return if (id > 0) id else collections.byName(clean)?.id ?: -1L
+    }
+
+    // False when the name is blank or already used by another collection. 
+    suspend fun renameCollection(id: Long, name: String): Boolean {
+        val clean = name.trim()
+        if (clean.isEmpty()) return false
+        val clash = collections.byName(clean)
+        if (clash != null && clash.id != id) return false
+        collections.rename(id, clean)
+        return true
+    }
+
+    suspend fun deleteCollection(id: Long) {
+        collections.clearMembers(id)
+        collections.delete(id)
+    }
+
+    suspend fun setInCollection(bookId: Long, collectionId: Long, member: Boolean) {
+        if (member) collections.addRef(BookCollectionRef(bookId, collectionId))
+        else collections.removeRef(bookId, collectionId)
+    }
 
     // helpers
 

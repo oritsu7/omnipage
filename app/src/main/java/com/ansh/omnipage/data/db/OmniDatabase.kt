@@ -14,14 +14,17 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FolderEntity::class,
         ReadingPositionEntity::class,
         BookmarkEntity::class,
+        CollectionEntity::class,
+        BookCollectionRef::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class OmniDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun folderDao(): FolderDao
     abstract fun readerDao(): ReaderDao
+    abstract fun collectionDao(): CollectionDao
 
     companion object {
         // add reading positions + bookmarks/quotes for PDF as well.
@@ -42,9 +45,30 @@ abstract class OmniDatabase : RoomDatabase() {
             }
         }
 
+        // Phase 3: collections (user shelves) and their membership table.
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `collections` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_collections_name` ON `collections` (`name`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `book_collections` (" +
+                        "`bookId` INTEGER NOT NULL, `collectionId` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`bookId`, `collectionId`))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_book_collections_collectionId` " +
+                        "ON `book_collections` (`collectionId`)"
+                )
+            }
+        }
+
         fun create(context: Context): OmniDatabase =
             Room.databaseBuilder(context.applicationContext, OmniDatabase::class.java, "omnipage.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
     }

@@ -11,6 +11,8 @@ import com.ansh.omnipage.data.Section
 import com.ansh.omnipage.data.SortOrder
 import com.ansh.omnipage.data.ViewMode
 import com.ansh.omnipage.data.db.BookEntity
+import com.ansh.omnipage.data.db.CollectionEntity
+import com.ansh.omnipage.data.db.CollectionWithCount
 import com.ansh.omnipage.data.db.FolderWithCount
 import com.ansh.omnipage.data.db.GroupCount
 import com.ansh.omnipage.data.settings.SettingsStore
@@ -29,6 +31,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -82,6 +86,26 @@ class LibraryViewModel(
     val scanState: StateFlow<ScanState> =
         scheduler.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ScanState())
 
+    // collections
+
+    val collections: StateFlow<List<CollectionWithCount>> =
+        repo.observeCollections().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val allCollections: StateFlow<List<CollectionEntity>> =
+        repo.observeAllCollections().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // The book whose "Add to collection" dialog is open (null = closed). 
+    private val _pickerBook = MutableStateFlow<BookEntity?>(null)
+    val pickerBook: StateFlow<BookEntity?> = _pickerBook.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val pickerMembers: StateFlow<Set<Long>> = _pickerBook
+        .flatMapLatest { book ->
+            if (book == null) flowOf(emptySet<Long>())
+            else repo.observeCollectionIds(book.id).map { it.toSet() }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     // navigation / filters
 
     fun selectSection(section: Section) {
@@ -103,13 +127,17 @@ class LibraryViewModel(
         _group.value = GroupFilter.Folder(item.folder.id, item.folder.displayName)
     }
 
+    fun openCollection(item: CollectionWithCount) {
+        _group.value = GroupFilter.Collection(item.collection.id, item.collection.name)
+    }
+
     fun clearGroup() {
         _group.value = null
     }
 
     fun openSearch() {
         val s = _section.value
-        if ((s.isGrouped && _group.value == null) || s == Section.COLLECTIONS) {
+        if (s.isGrouped && _group.value == null) {
             _section.value = Section.ALL
             _group.value = null
         }
@@ -174,6 +202,51 @@ class LibraryViewModel(
             repo.removeFolder(item.folder.id)
             if ((_group.value as? GroupFilter.Folder)?.id == item.folder.id) _group.value = null
             _messages.tryEmit("Removed ${item.folder.displayName} from the library")
+        }
+    }
+
+    // collections
+
+    fun createCollection(name: String) {
+        viewModelScope.launch {
+            if (repo.createCollection(name) <= 0) _messages.tryEmit("Couldn't create that collection")
+        }
+    }
+
+    fun renameCollection(item: CollectionWithCount, name: String) {
+        viewModelScope.launch {
+            if (!repo.renameCollection(item.collection.id, name)) {
+                _messages.tryEmit("A collection with that name already exists")
+            }
+        }
+    }
+
+    fun deleteCollection(item: CollectionWithCount) {
+        viewModelScope.launch {
+            repo.deleteCollection(item.collection.id)
+            if ((_group.value as? GroupFilter.Collection)?.id == item.collection.id) _group.value = null
+            _messages.tryEmit("Deleted “${item.collection.name}”. Its books are still in your library")
+        }
+    }
+
+    fun openCollectionPicker(book: BookEntity) {
+        _pickerBook.value = book
+    }
+
+    fun closeCollectionPicker() {
+        _pickerBook.value = null
+    }
+
+    fun setMembership(collection: CollectionEntity, member: Boolean) {
+        val book = _pickerBook.value ?: return
+        viewModelScope.launch { repo.setInCollection(book.id, collection.id, member) }
+    }
+
+    fun createCollectionForPicker(name: String) {
+        val book = _pickerBook.value ?: return
+        viewModelScope.launch {
+            val id = repo.createCollection(name)
+            if (id > 0) repo.setInCollection(book.id, id, true)
         }
     }
 

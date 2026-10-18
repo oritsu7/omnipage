@@ -38,7 +38,7 @@ enum class Section(val title: String) {
     TRASH("Trash");
 
     // Sections that first show a list of groups and only then the books of one group. 
-    val isGrouped: Boolean get() = this == AUTHORS || this == SERIES || this == FORMATS || this == FOLDERS
+    val isGrouped: Boolean get() = this == AUTHORS || this == SERIES || this == FORMATS || this == FOLDERS || this == COLLECTIONS
 }
 
 sealed interface GroupFilter {
@@ -57,6 +57,10 @@ sealed interface GroupFilter {
     }
 
     data class Folder(val id: Long, val name: String) : GroupFilter {
+        override val label: String get() = name
+    }
+
+    data class Collection(val id: Long, val name: String) : GroupFilter {
         override val label: String get() = name
     }
 }
@@ -96,6 +100,7 @@ internal fun buildBooksQuery(q: LibraryQuery): SimpleSQLiteQuery {
         is GroupFilter.Series -> { where.add("series = ? COLLATE NOCASE"); args.add(g.name) }
         is GroupFilter.Format -> { where.add("format = ?"); args.add(g.format.name) }
         is GroupFilter.Folder -> { where.add("folderId = ?"); args.add(g.id) }
+        is GroupFilter.Collection -> { where.add("id IN (SELECT bookId FROM book_collections WHERE collectionId = ?)"); args.add(g.id) }
         null -> Unit
     }
 
