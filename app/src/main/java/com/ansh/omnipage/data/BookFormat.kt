@@ -18,6 +18,7 @@ enum class BookFormat(
     RTF("RTF", "application/rtf", listOf("rtf"), false),
     ODT("ODT", "application/vnd.oasis.opendocument.text", listOf("odt"), false),
     TXT("TXT", "text/plain", listOf("txt"), false),
+    MD("MD", "text/markdown", listOf("md", "markdown"), false),
     CBZ("CBZ", "application/vnd.comicbook+zip", listOf("cbz"), true),
     DJVU("DJVU", "image/vnd.djvu", listOf("djvu", "djv"), true),
     CHM("CHM", "application/vnd.ms-htmlhelp", listOf("chm"), false);

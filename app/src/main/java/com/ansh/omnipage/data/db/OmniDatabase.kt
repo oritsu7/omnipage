@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CollectionEntity::class,
         BookCollectionRef::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class OmniDatabase : RoomDatabase() {
@@ -45,7 +45,7 @@ abstract class OmniDatabase : RoomDatabase() {
             }
         }
 
-        // Phase 3: collections (user shelves) and their membership table.
+        // Collections (user shelves) and their membership table.
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -66,9 +66,16 @@ abstract class OmniDatabase : RoomDatabase() {
             }
         }
 
+        // Notes: the text a reader types is stored next to the selected quote.
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `note` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun create(context: Context): OmniDatabase =
             Room.databaseBuilder(context.applicationContext, OmniDatabase::class.java, "omnipage.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
     }

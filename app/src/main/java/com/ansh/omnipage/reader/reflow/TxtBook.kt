@@ -85,7 +85,7 @@ class TxtBook private constructor(
             return TxtBook(fallbackTitle, titles, bodies)
         }
 
-        private fun decode(bytes: ByteArray): String {
+        internal fun decode(bytes: ByteArray): String {
             if (bytes.size >= 2) {
                 val b0 = bytes[0].toInt() and 0xFF
                 val b1 = bytes[1].toInt() and 0xFF

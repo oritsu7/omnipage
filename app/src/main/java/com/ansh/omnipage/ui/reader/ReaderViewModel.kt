@@ -12,6 +12,7 @@ import com.ansh.omnipage.data.db.BookmarkEntity
 import com.ansh.omnipage.data.reader.ReaderSettings
 import com.ansh.omnipage.reader.pdf.PdfSource
 import com.ansh.omnipage.reader.reflow.EpubBook
+import com.ansh.omnipage.reader.reflow.MarkdownBook
 import com.ansh.omnipage.reader.reflow.ReflowBook
 import com.ansh.omnipage.reader.reflow.TxtBook
 import kotlinx.coroutines.CancellationException
@@ -39,6 +40,7 @@ sealed interface ReaderUi {
 const val KIND_BOOKMARK = "bookmark"
 const val KIND_QUOTE = "quote"
 const val KIND_HIGHLIGHT = "highlight"
+const val KIND_NOTE = "note"
 
 // True when two locators ("pdf:<page>" / "ch:<chapter>:<fraction>") point at (nearly) the same spot. 
 fun sameSpot(a: String, b: String): Boolean {
@@ -53,10 +55,18 @@ fun sameSpot(a: String, b: String): Boolean {
     return false
 }
 
+// "hl:<chapter>:<start>:<end>:<fraction>" (highlights / notes) -> "ch:<chapter>:<fraction>". Others pass through. 
+private fun normalizeLocator(locator: String): String {
+    val p = locator.split(':')
+    return if (p.size == 5 && p[0] == "hl") "ch:${p[1]}:${p[4]}" else locator
+}
+
 class ReaderViewModel(
     private val bookId: Long,
     private val container: AppContainer,
     private val appContext: Context,
+    // Open here instead of at the saved position (used when jumping from the Quotes & Notes screen). 
+    private val startLocator: String? = null,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow<ReaderUi>(ReaderUi.Loading)
@@ -94,7 +104,7 @@ class ReaderViewModel(
             val entity = container.repository.observeBook(bookId).first()
                 ?: throw IOException("This book is no longer in your library.")
             _book.value = entity
-            val saved = container.reader.position(bookId)
+            val saved = startLocator?.let { normalizeLocator(it) } ?: container.reader.position(bookId)
             container.reader.markOpened(bookId)
             val uri = Uri.parse(entity.uri)
 
@@ -116,9 +126,16 @@ class ReaderViewModel(
                     restoreReflow(book, saved)
                     _ui.value = ReaderUi.Reflow(book)
                 }
+                BookFormat.MD -> {
+                    val book = withContext(Dispatchers.IO) {
+                        MarkdownBook.open(appContext, uri, entity.title.ifBlank { entity.fileName })
+                    }
+                    restoreReflow(book, saved)
+                    _ui.value = ReaderUi.Reflow(book)
+                }
                 else -> _ui.value = ReaderUi.Error(
                     "${format?.label ?: "This"} files can't be opened yet. " +
-                        "PDF, EPUB and TXT work now; more formats arrive in a later phase."
+                        "PDF, EPUB, TXT and Markdown work now; more formats arrive in a later phase."
                 )
             }
         } catch (e: CancellationException) {
@@ -185,7 +202,7 @@ class ReaderViewModel(
         container.reader.savePositionAsync(bookId, locator, pendingProgress)
     }
 
-    // ---- bookmarks / quotes / settings ---------------------------------------------------------
+    // ---- bookmarks / highlights / quotes / notes / settings ------------------------------------
 
     fun toggleBookmark(locator: String, label: String) {
         viewModelScope.launch {
@@ -202,6 +219,15 @@ class ReaderViewModel(
     // [locator] is "hl:<chapter>:<start>:<end>:<fraction>" — the text range that is painted in the page. 
     fun addHighlight(locator: String, label: String, text: String) {
         viewModelScope.launch { container.reader.addMark(bookId, KIND_HIGHLIGHT, locator, label, text) }
+    }
+
+    // Reflow notes use an "hl:" locator (painted like a highlight); PDF page notes use "pdf:<page>" and no quote. 
+    fun addNote(locator: String, label: String, quote: String, note: String) {
+        viewModelScope.launch { container.reader.addMark(bookId, KIND_NOTE, locator, label, quote, note) }
+    }
+
+    fun updateNote(id: Long, note: String) {
+        viewModelScope.launch { container.reader.updateNote(id, note) }
     }
 
     fun deleteMark(id: Long) {

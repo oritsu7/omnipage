@@ -39,6 +39,7 @@ class LibraryRepository(
 ) {
     private val books = db.bookDao()
     private val folders = db.folderDao()
+    private val reader = db.readerDao()
     private val collections = db.collectionDao()
 
     // One scan at a time: avoids two workers inserting the same file. 
@@ -93,6 +94,8 @@ class LibraryRepository(
         val owned = books.getByFolder(id)
         books.deleteByFolder(id)
         collections.purgeOrphans()
+        reader.purgeOrphanPositions()
+        reader.purgeOrphanMarks()
         folders.delete(id)
         owned.forEach { deleteCoverIfOrphan(it.coverPath) }
         runCatching {

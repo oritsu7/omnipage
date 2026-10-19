@@ -257,13 +257,19 @@ fun ContentsSheet(
     val bookmarks = marks.filter { it.kind == KIND_BOOKMARK }
     val highlights = marks.filter { it.kind == KIND_HIGHLIGHT }
     val quotes = marks.filter { it.kind == KIND_QUOTE }
-    // PDFs can't select text yet, so they only get Pages + Bookmarks.
-    val tabs = if (isPdf) {
-        listOf("Pages", "Bookmarks (${bookmarks.size})")
-    } else {
-        listOf("Contents", "Bookmarks (${bookmarks.size})", "Highlights (${highlights.size})", "Quotes (${quotes.size})")
+    val notes = marks.filter { it.kind == KIND_NOTE }
+
+    // Tab ids: 0 contents/pages, 1 bookmarks, 2 highlights, 3 quotes, 4 notes.
+    // PDFs can't select text, so they only get Pages, Bookmarks and (page) Notes.
+    val ids = if (isPdf) listOf(0, 1, 4) else listOf(0, 1, 2, 3, 4)
+    fun titleOf(id: Int): String = when (id) {
+        0 -> if (isPdf) "Pages" else "Contents"
+        1 -> "Bookmarks (${bookmarks.size})"
+        2 -> "Highlights (${highlights.size})"
+        3 -> "Quotes (${quotes.size})"
+        else -> "Notes (${notes.size})"
     }
-    val selected = tab.coerceIn(0, tabs.lastIndex)
+    val selected = tab.coerceIn(0, ids.lastIndex)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -277,12 +283,12 @@ fun ContentsSheet(
             containerColor = Panel,
             contentColor = Accent,
         ) {
-            tabs.forEachIndexed { i, title ->
-                Tab(selected = selected == i, onClick = { tab = i }, text = { Text(title, maxLines = 1) })
+            ids.forEachIndexed { i, id ->
+                Tab(selected = selected == i, onClick = { tab = i }, text = { Text(titleOf(id), maxLines = 1) })
             }
         }
 
-        when (selected) {
+        when (ids[selected]) {
             0 -> if (isPdf) {
                 GoToPage(pageCount, currentPage, onGoToPage)
             } else {
@@ -304,16 +310,12 @@ fun ContentsSheet(
                 }
             }
             1 -> MarkList(bookmarks, "No bookmarks yet. Tap the bookmark icon while reading.", false, onOpenMark, onDeleteMark)
-            2 -> MarkList(
-                highlights,
-                "No highlights yet. Select text and choose Highlight.",
-                true,
-                onOpenMark,
-                onDeleteMark,
-            )
+            2 -> MarkList(highlights, "No highlights yet. Select text and choose Highlight.", true, onOpenMark, onDeleteMark)
+            3 -> MarkList(quotes, "No quotes yet. Select text and choose Quote.", true, onOpenMark, onDeleteMark)
             else -> MarkList(
-                quotes,
-                "No quotes yet. Select text and choose Quote.",
+                notes,
+                if (isPdf) "No notes yet. Tap the note icon in the top bar to add one to this page."
+                else "No notes yet. Select text and choose Note.",
                 true,
                 onOpenMark,
                 onDeleteMark,
@@ -321,6 +323,7 @@ fun ContentsSheet(
         }
     }
 }
+
 
 @Composable
 private fun GoToPage(pageCount: Int, currentPage: Int, onGo: (Int) -> Unit) {
@@ -376,6 +379,10 @@ private fun MarkList(
                 Column(Modifier.weight(1f)) {
                     if (showQuote && mark.quote.isNotEmpty()) {
                         Text(mark.quote, fontStyle = FontStyle.Italic, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    if (mark.note.isNotEmpty()) {
+                        Text(mark.note, maxLines = 6, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
                     }
                     Text(mark.label, color = Accent, maxLines = 1, overflow = TextOverflow.Ellipsis)

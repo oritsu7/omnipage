@@ -57,7 +57,7 @@ import org.json.JSONTokener
 
 private const val TAG = "OmniReader"
 
-enum class SelectionAction { HIGHLIGHT, QUOTE }
+enum class SelectionAction { HIGHLIGHT, QUOTE, NOTE }
 
 // A saved highlight: a character range [start, end) of one chapter's text. [id] is the database id. 
 data class ReflowHighlight(val id: Long, val chapter: Int, val start: Int, val end: Int)
@@ -84,6 +84,9 @@ internal class OmniWebView(context: Context) : WebView(context) {
             if (menu.findItem(QUOTE_ID) == null) {
                 menu.add(Menu.NONE, QUOTE_ID, 1, "Quote").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
             }
+            if (menu.findItem(NOTE_ID) == null) {
+                menu.add(Menu.NONE, NOTE_ID, 2, "Note").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            }
         }
 
         override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
@@ -102,6 +105,7 @@ internal class OmniWebView(context: Context) : WebView(context) {
             val action = when (item?.itemId) {
                 HIGHLIGHT_ID -> SelectionAction.HIGHLIGHT
                 QUOTE_ID -> SelectionAction.QUOTE
+                NOTE_ID -> SelectionAction.NOTE
                 else -> null
             }
             if (action != null) {
@@ -133,6 +137,7 @@ internal class OmniWebView(context: Context) : WebView(context) {
     private companion object {
         const val HIGHLIGHT_ID = 0x4F51
         const val QUOTE_ID = 0x4F52
+        const val NOTE_ID = 0x4F53
     }
 }
 

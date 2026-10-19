@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.NoteAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -111,15 +112,18 @@ private fun parseHighlight(mark: BookmarkEntity): ReflowHighlight? {
     return ReflowHighlight(mark.id, chapter, start, end)
 }
 
+// A note that is being written but not saved yet. 
+private class NoteDraft(val locator: String, val label: String, val quote: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReaderScreen(bookId: Long, onBack: () -> Unit) {
+fun ReaderScreen(bookId: Long, startLocator: String? = null, onBack: () -> Unit) {
     val context = LocalContext.current
     val container = remember(context) { (context.applicationContext as OmniPageApp).container }
     val vm: ReaderViewModel = viewModel(
         key = "reader-$bookId",
         factory = viewModelFactory {
-            initializer { ReaderViewModel(bookId, container, context.applicationContext) }
+            initializer { ReaderViewModel(bookId, container, context.applicationContext, startLocator) }
         },
     )
 
@@ -172,7 +176,11 @@ fun ReaderScreen(bookId: Long, onBack: () -> Unit) {
     var atStart by remember { mutableStateOf(true) }
     var atEnd by remember { mutableStateOf(false) }
     var editingMark by remember { mutableStateOf<BookmarkEntity?>(null) }
-    val highlights = remember(marks) { marks.filter { it.kind == KIND_HIGHLIGHT }.mapNotNull { parseHighlight(it) } }
+    var noteDraft by remember { mutableStateOf<NoteDraft?>(null) }
+    // Notes are painted in the page like highlights; PDF page notes have no text range and are skipped here.
+    val highlights = remember(marks) {
+        marks.filter { it.kind == KIND_HIGHLIGHT || it.kind == KIND_NOTE }.mapNotNull { parseHighlight(it) }
+    }
 
     // The book finishes loading after first composition; pick up the restored position.
     LaunchedEffect(state) {
@@ -265,6 +273,9 @@ fun ReaderScreen(bookId: Long, onBack: () -> Unit) {
                                     vm.addQuote("ch:$ch:$f", label, text)
                                     Toast.makeText(context, "Quote saved", Toast.LENGTH_SHORT).show()
                                 }
+                                SelectionAction.NOTE -> {
+                                    noteDraft = NoteDraft("hl:$ch:$start:$end:$f", label, text)
+                                }
                             }
                         },
                         onHighlightTap = { id -> editingMark = marks.firstOrNull { it.id == id } },
@@ -325,6 +336,12 @@ fun ReaderScreen(bookId: Long, onBack: () -> Unit) {
                 },
                 actions = {
                     if (locator.isNotEmpty()) {
+                        // PDFs can't select text, so they get a note for the current page instead.
+                        if (pdf != null) {
+                            IconButton(onClick = { noteDraft = NoteDraft("pdf:$pdfPage", locatorLabel, "") }) {
+                                Icon(Icons.Outlined.NoteAdd, "Add page note")
+                            }
+                        }
                         IconButton(onClick = { vm.toggleBookmark(locator, locatorLabel) }) {
                             Icon(
                                 if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
@@ -374,6 +391,11 @@ fun ReaderScreen(bookId: Long, onBack: () -> Unit) {
                                 colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
                             )
                         }
+                        PdfThumbnailStrip(
+                            source = pdf.source,
+                            currentPage = pdfPage,
+                            onGo = { pdfController.goToPage(it) },
+                        )
                     } else if (reflow != null) {
                         val book = reflow.book
                         val progress = book.progressOf(chapter, fraction)
@@ -417,18 +439,51 @@ fun ReaderScreen(bookId: Long, onBack: () -> Unit) {
         }
     }
 
+    // Tapping painted text: notes open the editor, plain highlights offer removal.
     editingMark?.let { mark ->
-        AlertDialog(
-            onDismissRequest = { editingMark = null },
-            title = { Text("Highlight") },
-            text = { Text(mark.quote, maxLines = 8, overflow = TextOverflow.Ellipsis) },
-            confirmButton = {
-                TextButton(onClick = {
+        if (mark.kind == KIND_NOTE) {
+            NoteEditorDialog(
+                title = "Note",
+                quote = mark.quote,
+                initial = mark.note,
+                onDismiss = { editingMark = null },
+                onSave = { text ->
+                    vm.updateNote(mark.id, text)
+                    editingMark = null
+                },
+                onDelete = {
                     vm.deleteMark(mark.id)
                     editingMark = null
-                }) { Text("Remove") }
+                },
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { editingMark = null },
+                title = { Text("Highlight") },
+                text = { Text(mark.quote, maxLines = 8, overflow = TextOverflow.Ellipsis) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.deleteMark(mark.id)
+                        editingMark = null
+                    }) { Text("Remove") }
+                },
+                dismissButton = { TextButton(onClick = { editingMark = null }) { Text("Close") } },
+            )
+        }
+    }
+
+    // New note (from a text selection, or a PDF page).
+    noteDraft?.let { draft ->
+        NoteEditorDialog(
+            title = if (draft.quote.isEmpty()) "Note on ${draft.label}" else "Add note",
+            quote = draft.quote,
+            initial = "",
+            onDismiss = { noteDraft = null },
+            onSave = { text ->
+                vm.addNote(draft.locator, draft.label, draft.quote, text)
+                noteDraft = null
+                Toast.makeText(context, "Note saved", Toast.LENGTH_SHORT).show()
             },
-            dismissButton = { TextButton(onClick = { editingMark = null }) { Text("Close") } },
         )
     }
 

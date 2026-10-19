@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FormatQuote
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.automirrored.outlined.ViewList
@@ -122,6 +123,7 @@ private fun Section.icon(): ImageVector = when (this) {
 fun LibraryScreen(
     onOpenBook: (Long) -> Unit,
     onOpenDetails: (Long) -> Unit,
+    onOpenNotes: () -> Unit,
 ) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as OmniPageApp).container }
@@ -199,7 +201,13 @@ fun LibraryScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            LibraryDrawer(current = section) { picked ->
+            LibraryDrawer(
+                current = section,
+                onNotes = {
+                    scope.launch { drawerState.close() }
+                    onOpenNotes()
+                },
+            ) { picked ->
                 vm.selectSection(picked)
                 scope.launch { drawerState.close() }
             }
@@ -333,7 +341,7 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun LibraryDrawer(current: Section, onSelect: (Section) -> Unit) {
+private fun LibraryDrawer(current: Section, onNotes: () -> Unit, onSelect: (Section) -> Unit) {
     ModalDrawerSheet(drawerContainerColor = Panel) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Row(
@@ -346,23 +354,33 @@ private fun LibraryDrawer(current: Section, onSelect: (Section) -> Unit) {
             }
             HorizontalDivider(color = Color(0xFF1B3644))
             Spacer(Modifier.padding(top = 8.dp))
+            val itemColors = NavigationDrawerItemDefaults.colors(
+                unselectedContainerColor = Color.Transparent,
+                selectedContainerColor = Teal.copy(alpha = 0.55f),
+                unselectedIconColor = TextMuted,
+                selectedIconColor = Accent,
+                unselectedTextColor = Color.White,
+                selectedTextColor = Color.White,
+            )
             Section.entries.forEach { s ->
                 NavigationDrawerItem(
                     label = { Text(s.title) },
                     icon = { Icon(s.icon(), null) },
                     selected = s == current,
                     onClick = { onSelect(s) },
-                    colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Teal.copy(alpha = 0.55f),
-                        unselectedIconColor = TextMuted,
-                        selectedIconColor = Accent,
-                        unselectedTextColor = Color.White,
-                        selectedTextColor = Color.White,
-                    ),
+                    colors = itemColors,
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                 )
             }
+            HorizontalDivider(color = Color(0xFF1B3644), modifier = Modifier.padding(vertical = 8.dp))
+            NavigationDrawerItem(
+                label = { Text("Quotes & Notes") },
+                icon = { Icon(Icons.Outlined.FormatQuote, null) },
+                selected = false,
+                onClick = onNotes,
+                colors = itemColors,
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+            )
         }
     }
 }
