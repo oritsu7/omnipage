@@ -8,6 +8,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 data class ScanState(val active: Boolean = false, val found: Int = 0)
@@ -24,13 +25,15 @@ class ScanScheduler(context: Context) {
         workManager.enqueueUniqueWork("scan_folder_$folderId", ExistingWorkPolicy.KEEP, request(folderId))
     }
 
-    val state: Flow<ScanState> = workManager.getWorkInfosByTagFlow(TAG).map { infos ->
-        val running = infos.filter { it.state == WorkInfo.State.RUNNING }
-        ScanState(
-            active = infos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED },
-            found = running.maxOfOrNull { it.progress.getInt(ScanWorker.KEY_FOUND, 0) } ?: 0,
-        )
-    }
+    val state: Flow<ScanState> = workManager.getWorkInfosByTagFlow(TAG)
+        .map { infos ->
+            val running = infos.filter { it.state == WorkInfo.State.RUNNING }
+            ScanState(
+                active = infos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED },
+                found = running.maxOfOrNull { it.progress.getInt(ScanWorker.KEY_FOUND, 0) } ?: 0,
+            )
+        }
+        .distinctUntilChanged()
 
     private fun request(folderId: Long): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<ScanWorker>()

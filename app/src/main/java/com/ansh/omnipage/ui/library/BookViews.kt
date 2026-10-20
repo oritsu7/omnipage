@@ -1,9 +1,8 @@
 package com.ansh.omnipage.ui.library
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,11 +46,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.ansh.omnipage.data.bookFormat
 import com.ansh.omnipage.data.db.BookEntity
 import com.ansh.omnipage.ui.common.formatSize
@@ -61,17 +63,22 @@ import com.ansh.omnipage.ui.theme.TextMuted
 import java.io.File
 import kotlin.math.abs
 
-// Everything a book card can do; both list and grid items share it. 
+/**
+ Everything a book card can do; shared by list and grid items.
+ Created ONCE per screen and takes the book as an argument. A new instance per row (the old design)
+ made every row recompose whenever anything on the screen changed.
+*/
+@Stable
 class BookActions(
-    val onOpen: () -> Unit,
-    val onAbout: () -> Unit,
-    val onFavorite: () -> Unit,
-    val onToRead: () -> Unit,
-    val onFinished: () -> Unit,
-    val onCollections: () -> Unit,
-    val onShare: () -> Unit,
-    val onTrash: () -> Unit,
-    val onRestore: () -> Unit,
+    val onOpen: (BookEntity) -> Unit,
+    val onAbout: (BookEntity) -> Unit,
+    val onFavorite: (BookEntity) -> Unit,
+    val onToRead: (BookEntity) -> Unit,
+    val onFinished: (BookEntity) -> Unit,
+    val onCollections: (BookEntity) -> Unit,
+    val onShare: (BookEntity) -> Unit,
+    val onTrash: (BookEntity) -> Unit,
+    val onRestore: (BookEntity) -> Unit,
 )
 
 private val placeholderColors = listOf(
@@ -81,7 +88,7 @@ private val placeholderColors = listOf(
 
 @Composable
 fun BookCover(book: BookEntity, modifier: Modifier = Modifier) {
-    val color = placeholderColors[abs(book.title.hashCode()) % placeholderColors.size]
+    val color = remember(book.title) { placeholderColors[abs(book.title.hashCode()) % placeholderColors.size] }
     Box(
         modifier
             .clip(RoundedCornerShape(4.dp))
@@ -89,8 +96,13 @@ fun BookCover(book: BookEntity, modifier: Modifier = Modifier) {
     ) {
         val path = book.coverPath
         if (path != null) {
+            val context = LocalContext.current
+            // Built once per cover file instead of on every recomposition.
+            val request = remember(path) {
+                ImageRequest.Builder(context).data(File(path)).crossfade(false).build()
+            }
             AsyncImage(
-                model = File(path),
+                model = request,
                 contentDescription = book.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -145,14 +157,14 @@ private fun subtitle(book: BookEntity): String =
     "${book.bookFormat?.label ?: book.format}, ${formatSize(book.sizeBytes)}"
 
 @Composable
-private fun BookMenu(expanded: Boolean, onDismiss: () -> Unit, book: BookEntity, actions: BookActions) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        DropdownMenuItem(text = { Text("About document") }, onClick = { onDismiss(); actions.onAbout() })
-        DropdownMenuItem(text = { Text("Share") }, onClick = { onDismiss(); actions.onShare() })
+private fun BookMenu(onDismiss: () -> Unit, book: BookEntity, actions: BookActions) {
+    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        DropdownMenuItem(text = { Text("About document") }, onClick = { onDismiss(); actions.onAbout(book) })
+        DropdownMenuItem(text = { Text("Share") }, onClick = { onDismiss(); actions.onShare(book) })
         if (book.trashed) {
-            DropdownMenuItem(text = { Text("Restore") }, onClick = { onDismiss(); actions.onRestore() })
+            DropdownMenuItem(text = { Text("Restore") }, onClick = { onDismiss(); actions.onRestore(book) })
         } else {
-            DropdownMenuItem(text = { Text("Move to Trash") }, onClick = { onDismiss(); actions.onTrash() })
+            DropdownMenuItem(text = { Text("Move to Trash") }, onClick = { onDismiss(); actions.onTrash(book) })
         }
     }
 }
@@ -172,8 +184,9 @@ private fun CardIcon(icon: ImageVector, active: Boolean, description: String, on
 @Composable
 fun BookRow(book: BookEntity, actions: BookActions) {
     var menu by remember { mutableStateOf(false) }
+    val subtitle = remember(book.format, book.sizeBytes) { subtitle(book) }
     Card(
-        onClick = actions.onOpen,
+        onClick = { actions.onOpen(book) },
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = CardBg),
         modifier = Modifier
@@ -204,7 +217,7 @@ fun BookRow(book: BookEntity, actions: BookActions) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(subtitle(book), style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 Spacer(Modifier.weight(1f))
                 ProgressLine(book.progress)
                 Row(
@@ -213,21 +226,22 @@ fun BookRow(book: BookEntity, actions: BookActions) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (book.trashed) {
-                        TextButton(onClick = actions.onRestore) { Text("Restore") }
+                        TextButton(onClick = { actions.onRestore(book) }) { Text("Restore") }
                     } else {
                         CardIcon(
                             if (book.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                            book.isFavorite, "Favorite", actions.onFavorite,
-                        )
-                        CardIcon(Icons.Outlined.Schedule, book.isToRead, "To read", actions.onToRead)
-                        CardIcon(Icons.Outlined.DoneAll, book.isFinished, "Have read", actions.onFinished)
-                        CardIcon(Icons.Outlined.CollectionsBookmark, false, "Collections", actions.onCollections)
+                            book.isFavorite, "Favorite",
+                        ) { actions.onFavorite(book) }
+                        CardIcon(Icons.Outlined.Schedule, book.isToRead, "To read") { actions.onToRead(book) }
+                        CardIcon(Icons.Outlined.DoneAll, book.isFinished, "Have read") { actions.onFinished(book) }
+                        CardIcon(Icons.Outlined.CollectionsBookmark, false, "Collections") { actions.onCollections(book) }
                     }
                     Box {
                         IconButton(onClick = { menu = true }, modifier = Modifier.size(38.dp)) {
                             Icon(Icons.Outlined.MoreVert, "More", tint = TextMuted, modifier = Modifier.size(22.dp))
                         }
-                        BookMenu(menu, { menu = false }, book, actions)
+                        // Only composed while open: no menu machinery for the hundreds of closed ones.
+                        if (menu) BookMenu({ menu = false }, book, actions)
                     }
                 }
             }
@@ -243,7 +257,7 @@ fun BookGridItem(book: BookEntity, actions: BookActions) {
         Column(
             Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .combinedClickable(onClick = actions.onOpen, onLongClick = { menu = true }),
+                .combinedClickable(onClick = { actions.onOpen(book) }, onLongClick = { menu = true }),
         ) {
             Box {
                 BookCover(book, Modifier.fillMaxWidth().aspectRatio(2f / 3f))
@@ -279,6 +293,6 @@ fun BookGridItem(book: BookEntity, actions: BookActions) {
             Spacer(Modifier.height(4.dp))
             ProgressLine(book.progress)
         }
-        BookMenu(menu, { menu = false }, book, actions)
+        if (menu) BookMenu({ menu = false }, book, actions)
     }
 }

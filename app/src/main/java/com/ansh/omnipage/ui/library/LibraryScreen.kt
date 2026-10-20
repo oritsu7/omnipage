@@ -22,7 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FormatQuote
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.automirrored.outlined.ViewList
@@ -30,11 +29,12 @@ import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.CreateNewFolder
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FormatQuote
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.LocalOffer
@@ -72,10 +72,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,7 +96,7 @@ import com.ansh.omnipage.OmniPageApp
 import com.ansh.omnipage.data.Section
 import com.ansh.omnipage.data.SortOrder
 import com.ansh.omnipage.data.ViewMode
-import com.ansh.omnipage.data.db.BookEntity
+import com.ansh.omnipage.scan.ScanState
 import com.ansh.omnipage.ui.common.shareBook
 import com.ansh.omnipage.ui.theme.Accent
 import com.ansh.omnipage.ui.theme.Night
@@ -144,11 +146,14 @@ fun LibraryScreen(
     val folders by vm.folders.collectAsStateWithLifecycle()
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
-    val scan by vm.scanState.collectAsStateWithLifecycle()
     val collections by vm.collections.collectAsStateWithLifecycle()
     val allCollections by vm.allCollections.collectAsStateWithLifecycle()
     val pickerBook by vm.pickerBook.collectAsStateWithLifecycle()
     val pickerMembers by vm.pickerMembers.collectAsStateWithLifecycle()
+
+    // Deliberately NOT unwrapped here: scan progress ticks often, and only the two tiny composables
+    // that show it (ScanBar / ScanLabel) should recompose, never the whole list.
+    val scanState = vm.scanState.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -174,17 +179,22 @@ fun LibraryScreen(
         }
     }
 
-    fun actionsFor(book: BookEntity) = BookActions(
-        onOpen = { onOpenBook(book.id) },
-        onAbout = { onOpenDetails(book.id) },
-        onFavorite = { vm.toggleFavorite(book) },
-        onToRead = { vm.toggleToRead(book) },
-        onFinished = { vm.toggleFinished(book) },
-        onCollections = { vm.openCollectionPicker(book) },
-        onShare = { shareBook(context, book) },
-        onTrash = { vm.trash(book) },
-        onRestore = { vm.restore(book) },
-    )
+    // One stable instance for the whole screen, so book rows can be skipped when nothing about them changed.
+    val openBook by rememberUpdatedState(onOpenBook)
+    val openDetails by rememberUpdatedState(onOpenDetails)
+    val actions = remember(vm) {
+        BookActions(
+            onOpen = { openBook(it.id) },
+            onAbout = { openDetails(it.id) },
+            onFavorite = vm::toggleFavorite,
+            onToRead = vm::toggleToRead,
+            onFinished = vm::toggleFinished,
+            onCollections = vm::openCollectionPicker,
+            onShare = { shareBook(context, it) },
+            onTrash = vm::trash,
+            onRestore = vm::restore,
+        )
+    }
 
     val picking = pickerBook
     if (picking != null) {
@@ -271,9 +281,7 @@ fun LibraryScreen(
                             }
                         },
                     )
-                    if (scan.active) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent, trackColor = Panel)
-                    }
+                    ScanBar(scanState)
                 }
             },
         ) { padding ->
@@ -282,7 +290,7 @@ fun LibraryScreen(
                 when {
                     section == Section.FOLDERS && currentGroup == null -> FolderList(
                         folders = folders,
-                        scanning = scan.active,
+                        scanning = scanState.value.active,
                         onOpen = vm::openFolder,
                         onRescan = vm::rescanFolder,
                         onRemove = vm::removeFolder,
@@ -295,15 +303,17 @@ fun LibraryScreen(
                         onRename = vm::renameCollection,
                         onDelete = vm::deleteCollection,
                     )
-                    section.isGrouped && currentGroup == null -> GroupList(section, groups, vm::openGroup)
+                    section.isGrouped && currentGroup == null ->
+                        GroupList(section, groups, vm::openGroup)
                     list == null -> Unit
                     list.isEmpty() -> {
+                        val scanning = scanState.value.active
                         val (title, body) = emptyCopy(section, searching = search.isNotBlank())
                         val offerSources = section == Section.ALL && search.isBlank()
                         EmptyState(
                             title = title,
-                            body = if (scan.active) "Scanning your folders… books appear as they're found." else body,
-                            actions = if (offerSources && !scan.active) {
+                            body = if (scanning) "Scanning your folders… books appear as they're found." else body,
+                            actions = if (offerSources && !scanning) {
                                 { AddSourceButtons(pickFolder, pickFiles) }
                             } else null,
                         )
@@ -315,28 +325,47 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        gridItems(list, key = { it.id }) { book -> BookGridItem(book, actionsFor(book)) }
+                        gridItems(list, key = { it.id }) { book -> BookGridItem(book, actions) }
                     }
                     else -> LazyColumn(
                         contentPadding = PaddingValues(vertical = 6.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(list, key = { it.id }) { book -> BookRow(book, actionsFor(book)) }
+                        items(list, key = { it.id }) { book -> BookRow(book, actions) }
                     }
                 }
 
-                if (scan.active && list != null && list.isNotEmpty()) {
-                    Text(
-                        "Scanning… ${scan.found}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextMuted,
-                        modifier = Modifier
+                if (list != null && list.isNotEmpty()) {
+                    ScanLabel(
+                        scanState,
+                        Modifier
                             .align(Alignment.BottomCenter)
                             .padding(8.dp),
                     )
                 }
             }
         }
+    }
+}
+
+// Reads the scan state itself, so a progress tick recomposes only this, not the screen. 
+@Composable
+private fun ScanBar(scan: State<ScanState>) {
+    if (scan.value.active) {
+        LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent, trackColor = Panel)
+    }
+}
+
+@Composable
+private fun ScanLabel(scan: State<ScanState>, modifier: Modifier) {
+    val s = scan.value
+    if (s.active) {
+        Text(
+            "Scanning… ${s.found}",
+            style = MaterialTheme.typography.labelSmall,
+            color = TextMuted,
+            modifier = modifier,
+        )
     }
 }
 

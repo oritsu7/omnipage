@@ -34,6 +34,10 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
 
 class LibraryViewModel(
@@ -72,7 +76,7 @@ class LibraryViewModel(
         sort,
     ) { section, search, group, sort -> LibraryQuery(section, search, group, sort) }
         .distinctUntilChanged()
-        .flatMapLatest { repo.observeBooks(it) }
+        .flatMapLatest { repo.observeBooks(it).distinctUntilChanged().throttleLatest(200) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -268,4 +272,11 @@ class LibraryViewModel(
     fun notice(text: String) {
         _messages.tryEmit(text)
     }
+}
+
+// First value immediately, then at most one per [periodMs] (always the newest). Keeps list refreshes from
+// piling up while a scan inserts books, without delaying the first load or a lone tap on a star.
+private fun <T> Flow<T>.throttleLatest(periodMs: Long): Flow<T> = conflate().transform { value ->
+    emit(value)
+    delay(periodMs)
 }
